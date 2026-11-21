@@ -217,37 +217,87 @@ def setup_webhook():
 setup_webhook()
 
 
+
 @app.route("/pulse-check")
 def pulse_check():
     api_key = os.environ.get("PULSESCORE_API_KEY", "")
 
     if not api_key:
-        return jsonify({"ok": False, "error": "API key не найден в Render"}), 503
+        return jsonify({
+            "ok": False,
+            "error": "API key не найден в Render"
+        }), 503
 
     try:
-        response = requests.get(
-            "https://api.pulsescore.net/api/onexbet/results/leagues",
-            headers={"X-Secret": api_key},
-            params={"sport": "esports", "page": 1, "limit": 5},
+        headers = {"X-Secret": api_key}
+        base_url = "https://api.pulsescore.net/api/onexbet/results/leagues"
+
+        first = requests.get(
+            base_url,
+            headers=headers,
+            params={
+                "sport": "esports",
+                "page": 1,
+                "limit": 5
+            },
             timeout=20
         )
 
-        if response.status_code != 200:
+        if first.status_code != 200:
             return jsonify({
                 "ok": False,
-                "http_status": response.status_code,
-                "message": "Ошибка ответа PulseScore"
+                "http_status": first.status_code
             }), 502
+
+        first_data = first.json()
+        total_pages = int(first_data.get("totalPages", 1))
+
+        found = []
+        scanned = 0
+
+        for page in range(1, total_pages + 1):
+            if page == 1:
+                data = first_data
+            else:
+                response = requests.get(
+                    base_url,
+                    headers=headers,
+                    params={
+                        "sport": "esports",
+                        "page": page,
+                        "limit": 5
+                    },
+                    timeout=20
+                )
+
+                if response.status_code != 200:
+                    continue
+
+                data = response.json()
+
+            leagues = data.get("leagues", [])
+
+            for league in leagues:
+                scanned += 1
+                name = str(league.get("name", ""))
+
+                if "fifa" in name.lower() or "penalty" in name.lower():
+                    found.append({
+                        "name": name,
+                        "resultCount": league.get("resultCount")
+                    })
 
         return jsonify({
             "ok": True,
-            "message": "PulseScore API отвечает",
-            "data": response.json()
+            "total_pages": total_pages,
+            "leagues_scanned": scanned,
+            "found_count": len(found),
+            "found": found
         })
 
-    except requests.RequestException:
+    except (requests.RequestException, ValueError, TypeError):
         return jsonify({
             "ok": False,
-            "message": "Не удалось связаться с PulseScore"
+            "error": "Ошибка при проверке архива PulseScore"
         }), 502
 
