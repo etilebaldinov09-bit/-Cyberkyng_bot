@@ -215,3 +215,39 @@ def setup_webhook():
         print("Webhook setup error:", str(e))
 
 setup_webhook()
+
+
+@app.route("/pulse-check")
+def pulse_check():
+    api_key = os.environ.get("PULSESCORE_API_KEY", "")
+
+    if not api_key:
+        return jsonify({"ok": False, "error": "API key не найден в Render"}), 503
+
+    try:
+        response = requests.get(
+            "https://api.pulsescore.net/api/onexbet/results/leagues",
+            headers={"X-Secret": api_key},
+            params={"sport": "esports", "page": 1, "limit": 5},
+            timeout=20
+        )
+
+        if response.status_code != 200:
+            return jsonify({
+                "ok": False,
+                "http_status": response.status_code,
+                "message": "Ошибка ответа PulseScore"
+            }), 502
+
+        return jsonify({
+            "ok": True,
+            "message": "PulseScore API отвечает",
+            "data": response.json()
+        })
+
+    except requests.RequestException:
+        return jsonify({
+            "ok": False,
+            "message": "Не удалось связаться с PulseScore"
+        }), 502
+
